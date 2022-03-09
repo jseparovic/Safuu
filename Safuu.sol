@@ -1,6 +1,17 @@
+/**
+ *Submitted for verification at BscScan.com on 2022-03-07
+*/
+
+/*
+RingFi
+Website: https://ringfi.io/
+Twitter: https://twitter.com/ringfiprotocol
+Telegram: https://t.me/ringfi
+Discord: https://discord.com/invite/nfWfZSrm2p
+Whitepaper: https://docs.ringfi.io/
+*/
+
 // SPDX-License-Identifier: Unlicensed
-//
-// SAFUU PROTOCOL COPYRIGHT (C) 2022 
 
 pragma solidity ^0.7.4;
 
@@ -394,15 +405,15 @@ abstract contract ERC20Detailed is IERC20 {
     }
 }
 
-contract Safuu is ERC20Detailed, Ownable {
+contract RingContract is ERC20Detailed, Ownable {
 
     using SafeMath for uint256;
     using SafeMathInt for int256;
 
     event LogRebase(uint256 indexed epoch, uint256 totalSupply);
 
-    string public _name = "Safuu";
-    string public _symbol = "SAFUU";
+    string public _name = "Ring";
+    string public _symbol = "RING";
     uint8 public _decimals = 5;
 
     IPancakeSwapPair public pairContract;
@@ -422,22 +433,22 @@ contract Safuu is ERC20Detailed, Ownable {
 
     uint256 public liquidityFee = 40;
     uint256 public treasuryFee = 25;
-    uint256 public safuuInsuranceFundFee = 50;
+    uint256 public ringRiskFreeFundFee = 50;
     uint256 public sellFee = 20;
-    uint256 public firePitFee = 25;
+    uint256 public supplyControlFee = 25;
     uint256 public totalFee =
-        liquidityFee.add(treasuryFee).add(safuuInsuranceFundFee).add(
-            firePitFee
+        liquidityFee.add(treasuryFee).add(ringRiskFreeFundFee).add(
+            supplyControlFee
         );
     uint256 public feeDenominator = 1000;
 
-    address DEAD = 0x000000000000000000000000000000000000dEaD;
-    address ZERO = 0x0000000000000000000000000000000000000000;
+    address public constant DEAD = 0x000000000000000000000000000000000000dEaD;
+    address public constant ZERO = 0x0000000000000000000000000000000000000000;
 
-    address public autoLiquidityReceiver;
-    address public treasuryReceiver;
-    address public safuuInsuranceFundReceiver;
-    address public firePit;
+    address public autoLiquidityFund;
+    address public treasuryFund;
+    address public ringRiskFreeFund;
+    address public supplyControl;
     address public pairAddress;
     bool public swapEnabled = true;
     IPancakeSwapRouter public router;
@@ -454,6 +465,8 @@ contract Safuu is ERC20Detailed, Ownable {
 
     uint256 private constant MAX_SUPPLY = 325 * 10**7 * 10**DECIMALS;
 
+    uint256 public INDEX;
+
     bool public _autoRebase;
     bool public _autoAddLiquidity;
     uint256 public _initRebaseStartTime;
@@ -466,39 +479,39 @@ contract Safuu is ERC20Detailed, Ownable {
     mapping(address => mapping(address => uint256)) private _allowedFragments;
     mapping(address => bool) public blacklist;
 
-    constructor() ERC20Detailed("Safuu", "SAFUU", uint8(DECIMALS)) Ownable() {
-
+    constructor() ERC20Detailed("Ring", "RING", uint8(DECIMALS)) Ownable() {
         router = IPancakeSwapRouter(0x10ED43C718714eb63d5aA57B78B54704E256024E); 
         pair = IPancakeSwapFactory(router.factory()).createPair(
             router.WETH(),
             address(this)
         );
       
-        autoLiquidityReceiver = 0x5562640B953b6c2f79a655E930aFa68b2a65C627;
-        treasuryReceiver = 0xa9c6d0cc785569b450393A69599E97fAED5D9dd9; 
-        safuuInsuranceFundReceiver = 0x082D0FbCA3D80b2d4A05E20bFc227523bE8EFEF3;
-        firePit = 0xaA32C984AfDfa6B95e88B8aB7faBfa65De89b98C;
+        autoLiquidityFund = 0xAFeF14FCFA2eE825C1Cd97388C3f55647eB380E1;
+        treasuryFund = 0xd109372643248e084fFF06535192E5613A708398;
+        ringRiskFreeFund = 0x2FFB7Aa664F8656822f6fd2218c79B64202d47aD;
+        supplyControl = 0xA8B02396920388b926728B3646A27be4a2c66B76;
 
         _allowedFragments[address(this)][address(router)] = uint256(-1);
         pairAddress = pair;
         pairContract = IPancakeSwapPair(pair);
 
         _totalSupply = INITIAL_FRAGMENTS_SUPPLY;
-        _gonBalances[treasuryReceiver] = TOTAL_GONS;
+        _gonBalances[treasuryFund] = TOTAL_GONS;
         _gonsPerFragment = TOTAL_GONS.div(_totalSupply);
         _initRebaseStartTime = block.timestamp;
         _lastRebasedTime = block.timestamp;
         _autoRebase = true;
         _autoAddLiquidity = true;
-        _isFeeExempt[treasuryReceiver] = true;
+        _isFeeExempt[treasuryFund] = true;
         _isFeeExempt[address(this)] = true;
 
-        _transferOwnership(treasuryReceiver);
-        emit Transfer(address(0x0), treasuryReceiver, _totalSupply);
+        INDEX = gonsForBalance(100000);
+
+        _transferOwnership(treasuryFund);
+        emit Transfer(address(0x0), treasuryFund, _totalSupply);
     }
 
     function rebase() internal {
-        
         if ( inSwap ) return;
         uint256 rebaseRate;
         uint256 deltaTimeFromInit = block.timestamp - _initRebaseStartTime;
@@ -506,14 +519,18 @@ contract Safuu is ERC20Detailed, Ownable {
         uint256 times = deltaTime.div(15 minutes);
         uint256 epoch = times.mul(15);
 
-        if (deltaTimeFromInit < (365 days)) {
-            rebaseRate = 2355;
-        } else if (deltaTimeFromInit >= (7 * 365 days)) {
-            rebaseRate = 2;
-        } else if (deltaTimeFromInit >= ((15 * 365 days) / 10)) {
-            rebaseRate = 14;
+        if (deltaTimeFromInit >= (8 * 365 days)) {
+            rebaseRate = 8;
+        } else if (deltaTimeFromInit >= (5 * 365 days)) {
+            rebaseRate = 33;
+        } else if (deltaTimeFromInit >= (3 * 365 days)) {
+            rebaseRate = 62;
+        } else if (deltaTimeFromInit >= (2 * 365 days)) {
+            rebaseRate = 125;
         } else if (deltaTimeFromInit >= (365 days)) {
-            rebaseRate = 211;
+            rebaseRate = 224;
+        } else {
+            rebaseRate = 2362;
         }
 
         for (uint256 i = 0; i < times; i++) {
@@ -545,7 +562,6 @@ contract Safuu is ERC20Detailed, Ownable {
         address to,
         uint256 value
     ) external override validRecipient(to) returns (bool) {
-        
         if (_allowedFragments[from][msg.sender] != uint256(-1)) {
             _allowedFragments[from][msg.sender] = _allowedFragments[from][
                 msg.sender
@@ -571,7 +587,6 @@ contract Safuu is ERC20Detailed, Ownable {
         address recipient,
         uint256 amount
     ) internal returns (bool) {
-
         require(!blacklist[sender] && !blacklist[recipient], "in_blacklist");
 
         if (inSwap) {
@@ -622,13 +637,13 @@ contract Safuu is ERC20Detailed, Ownable {
 
         uint256 feeAmount = gonAmount.div(feeDenominator).mul(_totalFee);
        
-        _gonBalances[firePit] = _gonBalances[firePit].add(
-            gonAmount.div(feeDenominator).mul(firePitFee)
+        _gonBalances[supplyControl] = _gonBalances[supplyControl].add(
+            gonAmount.div(feeDenominator).mul(supplyControlFee)
         );
         _gonBalances[address(this)] = _gonBalances[address(this)].add(
-            gonAmount.div(feeDenominator).mul(_treasuryFee.add(safuuInsuranceFundFee))
+            gonAmount.div(feeDenominator).mul(_treasuryFee.add(ringRiskFreeFundFee))
         );
-        _gonBalances[autoLiquidityReceiver] = _gonBalances[autoLiquidityReceiver].add(
+        _gonBalances[autoLiquidityFund] = _gonBalances[autoLiquidityFund].add(
             gonAmount.div(feeDenominator).mul(liquidityFee)
         );
         
@@ -637,13 +652,13 @@ contract Safuu is ERC20Detailed, Ownable {
     }
 
     function addLiquidity() internal swapping {
-        uint256 autoLiquidityAmount = _gonBalances[autoLiquidityReceiver].div(
+        uint256 autoLiquidityAmount = _gonBalances[autoLiquidityFund].div(
             _gonsPerFragment
         );
         _gonBalances[address(this)] = _gonBalances[address(this)].add(
-            _gonBalances[autoLiquidityReceiver]
+            _gonBalances[autoLiquidityFund]
         );
-        _gonBalances[autoLiquidityReceiver] = 0;
+        _gonBalances[autoLiquidityFund] = 0;
         uint256 amountToLiquify = autoLiquidityAmount.div(2);
         uint256 amountToSwap = autoLiquidityAmount.sub(amountToLiquify);
 
@@ -673,7 +688,7 @@ contract Safuu is ERC20Detailed, Ownable {
                 amountToLiquify,
                 0,
                 0,
-                autoLiquidityReceiver,
+                autoLiquidityFund,
                 block.timestamp
             );
         }
@@ -681,7 +696,6 @@ contract Safuu is ERC20Detailed, Ownable {
     }
 
     function swapBack() internal swapping {
-
         uint256 amountToSwap = _gonBalances[address(this)].div(_gonsPerFragment);
 
         if( amountToSwap == 0) {
@@ -702,28 +716,27 @@ contract Safuu is ERC20Detailed, Ownable {
             block.timestamp
         );
 
-        uint256 amountETHToTreasuryAndSIF = address(this).balance.sub(
+        uint256 amountETHToTreasuryAndRRFF = address(this).balance.sub(
             balanceBefore
         );
 
-        (bool success, ) = payable(treasuryReceiver).call{
-            value: amountETHToTreasuryAndSIF.mul(treasuryFee).div(
-                treasuryFee.add(safuuInsuranceFundFee)
+        (bool success, ) = payable(treasuryFund).call{
+            value: amountETHToTreasuryAndRRFF.mul(treasuryFee).div(
+                treasuryFee.add(ringRiskFreeFundFee)
             ),
             gas: 30000
         }("");
-        (success, ) = payable(safuuInsuranceFundReceiver).call{
-            value: amountETHToTreasuryAndSIF.mul(safuuInsuranceFundFee).div(
-                treasuryFee.add(safuuInsuranceFundFee)
+        (success, ) = payable(ringRiskFreeFund).call{
+            value: amountETHToTreasuryAndRRFF.mul(ringRiskFreeFundFee).div(
+                treasuryFee.add(ringRiskFreeFundFee)
             ),
             gas: 30000
         }("");
     }
 
     function withdrawAllToTreasury() external swapping onlyOwner {
-
         uint256 amountToSwap = _gonBalances[address(this)].div(_gonsPerFragment);
-        require( amountToSwap > 0,"There is no Safuu token deposited in token contract");
+        require( amountToSwap > 0,"There is no RING token deposited in token contract");
         address[] memory path = new address[](2);
         path[0] = address(this);
         path[1] = router.WETH();
@@ -731,7 +744,7 @@ contract Safuu is ERC20Detailed, Ownable {
             amountToSwap,
             0,
             path,
-            treasuryReceiver,
+            treasuryFund,
             block.timestamp
         );
     }
@@ -760,7 +773,7 @@ contract Safuu is ERC20Detailed, Ownable {
             _autoAddLiquidity && 
             !inSwap && 
             msg.sender != pair &&
-            block.timestamp >= (_lastAddLiquidityTime + 2 days);
+            block.timestamp >= (_lastAddLiquidityTime + 1 days);
     }
 
     function shouldSwapBack() internal view returns (bool) {
@@ -861,19 +874,19 @@ contract Safuu is ERC20Detailed, Ownable {
     }
 
     function setFeeReceivers(
-        address _autoLiquidityReceiver,
-        address _treasuryReceiver,
-        address _safuuInsuranceFundReceiver,
-        address _firePit
+        address _autoLiquidityFund,
+        address _treasuryFund,
+        address _ringRiskFreeFund,
+        address _supplyControl
     ) external onlyOwner {
-        autoLiquidityReceiver = _autoLiquidityReceiver;
-        treasuryReceiver = _treasuryReceiver;
-        safuuInsuranceFundReceiver = _safuuInsuranceFundReceiver;
-        firePit = _firePit;
+        autoLiquidityFund = _autoLiquidityFund;
+        treasuryFund = _treasuryFund;
+        ringRiskFreeFund = _ringRiskFreeFund;
+        supplyControl = _supplyControl;
     }
 
     function getLiquidityBacking(uint256 accuracy)
-        public
+        external
         view
         returns (uint256)
     {
@@ -887,11 +900,11 @@ contract Safuu is ERC20Detailed, Ownable {
     }
 
     function setBotBlacklist(address _botAddress, bool _flag) external onlyOwner {
-        require(isContract(_botAddress), "only contract address, not allowed exteranlly owned account");
+        require(isContract(_botAddress), "Only contract address, not allowed externally owned account");
         blacklist[_botAddress] = _flag;    
     }
     
-    function setPairAddress(address _pairAddress) public onlyOwner {
+    function setPairAddress(address _pairAddress) external onlyOwner {
         pairAddress = _pairAddress;
     }
 
@@ -911,6 +924,18 @@ contract Safuu is ERC20Detailed, Ownable {
         uint size;
         assembly { size := extcodesize(addr) }
         return size > 0;
+    }
+
+    function gonsForBalance(uint256 amount) public view returns (uint256) {
+        return amount.mul(_gonsPerFragment);
+    }
+
+    function balanceForGons(uint256 gons) public view returns (uint256) {
+        return gons.div(_gonsPerFragment);
+    }
+
+    function index() public view returns (uint256) {
+        return balanceForGons(INDEX);
     }
 
     receive() external payable {}
